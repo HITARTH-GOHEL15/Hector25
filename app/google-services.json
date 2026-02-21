@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "655412376128",
+    "project_id": "hector25-c1682",
+    "storage_bucket": "hector25-c1682.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:655412376128:android:80a4d1be56111645b565a5",
+        "android_client_info": {
+          "package_name": "com.example.hector25"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBRTID4xtUNRLeWrBKgYCZOh-WO4Eemoj4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
