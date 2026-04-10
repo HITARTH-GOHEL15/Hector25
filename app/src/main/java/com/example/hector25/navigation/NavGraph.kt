@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.toRoute
 import com.example.hector25.MainActivity
 import com.example.hector25.user_interface.Auth.LoginScreen
 import com.example.hector25.user_interface.Auth.SignUpScreen
@@ -82,7 +83,9 @@ fun NavGraph(
         }
 
         composable<Screens.SearchScreenRoute> {
-            SearchScreen()
+            SearchScreen(
+                navController = navController
+            )
         }
 
         composable<Screens.CommunityFeedScreenRoute> {
@@ -93,10 +96,12 @@ fun NavGraph(
             ProfileScreen()
         }
 
-        composable<Screens.PropertyDetailScreenRoute> {
-            PropertyDetailScreen(
-                navController
-            )
-        }
+         composable<Screens.PropertyDetailScreenRoute> { backStackEntry ->
+     val route = backStackEntry.toRoute<Screens.PropertyDetailScreenRoute>()
+     PropertyDetailScreen(
+         navController = navController,
+         mlsId = route.mlsId
+     )
+ }
     }
 }

@@ -216,7 +216,9 @@ fun HomeScreen(
                 }
                 BottomNavigationScreens.SearchView -> {
                     isDashBoardScreen = false
-                    SearchScreen()
+                    SearchScreen(
+                        navController = navController
+                    )
 
                 }
                 BottomNavigationScreens.CommunityView -> {

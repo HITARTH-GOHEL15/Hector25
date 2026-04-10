@@ -19,28 +19,28 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.navigation.NavController
+import coil.compose.AsyncImage
+import com.example.hector25.data.SimplyRetsProperty
+import com.example.hector25.navigation.Screens
+import com.example.hector25.user_interface.dashBoard.PropertyUiState
+import org.koin.androidx.compose.koinViewModel
 
-data class PropertySearchResult(
-    val id: Int,
-    val title: String,
-    val location: String,
-    val price: String,
-    val bedrooms: Int,
-    val bathrooms: Int,
-    val area: String,
-    val imageColor: Color,
-    val isFavorite: Boolean = false,
-    val type: String
-)
+private val Blue600 = Color(0xFF2563EB)
+private val Blue50  = Color(0xFFEFF6FF)
+private val Gray900 = Color(0xFF111827)
+private val Gray700 = Color(0xFF374151)
+private val Gray500 = Color(0xFF6B7280)
+private val Gray300 = Color(0xFFD1D5DB)
+private val Gray100 = Color(0xFFF3F4F6)
+private val BgPage  = Color(0xFFF8F9FA)
 
 data class SearchCategory(
     val name: String,
@@ -48,32 +48,38 @@ data class SearchCategory(
     val color: Color
 )
 
+enum class SortOption(val label: String) {
+    PRICE_ASC("Price: Low → High"),
+    PRICE_DESC("Price: High → Low"),
+    NEWEST("Newest First"),
+    BEDS_DESC("Most Bedrooms")
+}
+
 @Composable
-fun SearchScreen() {
-    var searchQuery by remember { mutableStateOf("") }
-    var selectedBottomNav by remember { mutableStateOf(1) }
+fun SearchScreen(viewModel: SearchViewModel = koinViewModel(), navController: NavController) {
+    var searchQuery    by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf("All") }
-    var showFilters by remember { mutableStateOf(false) }
-    var viewType by remember { mutableStateOf("grid") } // grid or list
+    var showFilters    by remember { mutableStateOf(false) }
+    var viewType       by remember { mutableStateOf("grid") }   // "grid" | "list"
+    var sortOption     by remember { mutableStateOf(SortOption.PRICE_ASC) }
+    var showSortMenu   by remember { mutableStateOf(false) }
+
+    // filter params
+    var filterMinBeds  by remember { mutableStateOf<Int?>(null) }
+    var filterMinPrice by remember { mutableStateOf<Int?>(null) }
+    var filterMaxPrice by remember { mutableStateOf<Int?>(null) }
+
+    val state by viewModel.state.collectAsState()
+
+    LaunchedEffect(Unit) { viewModel.loadAll() }
 
     val categories = remember {
         listOf(
-            SearchCategory("All", Icons.Default.Home, Color(0xFF2563EB)),
-            SearchCategory("House", Icons.Default.Home, Color(0xFF10B981)),
-            SearchCategory("Apartment", Icons.Default.Home, Color(0xFFF59E0B)),
-            SearchCategory("Villa", Icons.Default.Home, Color(0xFF8B5CF6)),
-            SearchCategory("Office", Icons.Default.Home, Color(0xFFEF4444))
-        )
-    }
-
-    val properties = remember {
-        listOf(
-            PropertySearchResult(1, "Modern Family House", "Downtown, CA", "$850,000", 4, 3, "2,500 sqft", Color(0xFFBFDBFE), false, "House"),
-            PropertySearchResult(2, "Luxury Apartment", "Beverly Hills, CA", "$1,200,000", 3, 2, "1,800 sqft", Color(0xFFDDD6FE), false, "Apartment"),
-            PropertySearchResult(3, "Cozy Studio", "West Side, CA", "$450,000", 1, 1, "650 sqft", Color(0xFFFED7AA), false, "Apartment"),
-            PropertySearchResult(4, "Spacious Villa", "Malibu, CA", "$2,500,000", 5, 4, "4,200 sqft", Color(0xFFD1FAE5), false, "Villa"),
-            PropertySearchResult(5, "Modern Office Space", "Financial District", "$950,000", 0, 2, "3,000 sqft", Color(0xFFFFE4E6), false, "Office"),
-            PropertySearchResult(6, "Beach House", "Santa Monica, CA", "$1,800,000", 4, 3, "3,200 sqft", Color(0xFFC7D2FE), false, "House")
+            SearchCategory("All",       Icons.Default.Home,     Blue600),
+            SearchCategory("House",     Icons.Default.Home,     Color(0xFF10B981)),
+            SearchCategory("Apartment", Icons.Default.Home,     Color(0xFFF59E0B)),
+            SearchCategory("Villa",     Icons.Default.Home,     Color(0xFF8B5CF6)),
+            SearchCategory("Office",    Icons.Default.Home,     Color(0xFFEF4444))
         )
     }
 
@@ -81,617 +87,502 @@ fun SearchScreen() {
         listOf("3BHK in Downtown", "Apartments under 500K", "Villas in Malibu", "Studio apartments")
     }
 
-    Scaffold(
-        topBar = { SearchTopBar() },
-        containerColor = Color(0xFFF8F9FA)
-    ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-        ) {
-            // Search Bar Section
-            SearchBarSection(
-                searchQuery = searchQuery,
-                onSearchQueryChange = { searchQuery = it },
-                onFilterClick = { showFilters = !showFilters },
-                onViewTypeChange = { viewType = if (viewType == "grid") "list" else "grid" }
-            )
+    // derived filtered + sorted list
+    val displayProperties: List<SimplyRetsProperty> = remember(state, searchQuery, selectedCategory, sortOption) {
+        val base = (state as? PropertyUiState.Success)?.properties ?: return@remember emptyList()
 
-            // Categories
-            CategoriesSection(
-                categories = categories,
-                selectedCategory = selectedCategory,
-                onCategorySelected = { selectedCategory = it }
-            )
-
-            // Results count and sort
-            ResultsHeader(
-                count = properties.size,
-                viewType = viewType
-            )
-
-            // Search Results
-            if (searchQuery.isEmpty()) {
-                RecentSearchesSection(recentSearches = recentSearches)
-            } else {
-                if (viewType == "grid") {
-                    PropertyGridResults(properties = properties)
-                } else {
-                    PropertyListResults(properties = properties)
-                }
+        var filtered = base
+        if (searchQuery.isNotBlank()) {
+            val q = searchQuery.lowercase()
+            filtered = filtered.filter { p ->
+                val addr = "${p.address?.city} ${p.address?.streetName} ${p.address?.state}".lowercase()
+                val type = p.property?.type?.lowercase() ?: ""
+                q in addr || q in type
             }
         }
+        if (selectedCategory != "All") {
+            val cat = selectedCategory.lowercase()
+            filtered = filtered.filter { it.property?.type?.lowercase()?.contains(cat) == true }
+        }
 
-        // Filter Bottom Sheet
-        if (showFilters) {
-            FilterBottomSheet(
-                onDismiss = { showFilters = false }
-            )
+        when (sortOption) {
+            SortOption.PRICE_ASC  -> filtered.sortedBy { it.listPrice ?: Int.MAX_VALUE }
+            SortOption.PRICE_DESC -> filtered.sortedByDescending { it.listPrice ?: 0 }
+            SortOption.NEWEST     -> filtered  // no date field available, keep original
+            SortOption.BEDS_DESC  -> filtered.sortedByDescending { it.property?.bedrooms ?: 0 }
+        }
+    }
+
+    val isSearching = searchQuery.isNotBlank() || selectedCategory != "All"
+
+    Scaffold(
+        topBar = { SearchTopBar() },
+        containerColor = BgPage
+    ) { paddingValues ->
+        Box(modifier = Modifier.fillMaxSize()) {
+            Column(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
+
+                // Search bar + filter button
+                SearchBarSection(
+                    searchQuery      = searchQuery,
+                    onQueryChange    = { searchQuery = it },
+                    onFilterClick    = { showFilters = true },
+                    onViewTypeChange = { viewType = if (viewType == "grid") "list" else "grid" },
+                    viewType         = viewType,
+                    hasActiveFilters = filterMinBeds != null || filterMinPrice != null || filterMaxPrice != null
+                )
+
+                // Category chips
+                CategoryChipsRow(
+                    categories       = categories,
+                    selectedCategory = selectedCategory,
+                    onSelect         = { selectedCategory = it }
+                )
+
+                when (state) {
+                    is PropertyUiState.Loading -> {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                CircularProgressIndicator(color = Blue600)
+                                Text("Loading properties…", color = Gray500, fontSize = 14.sp)
+                            }
+                        }
+                    }
+                    is PropertyUiState.Error -> {
+                        Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Icon(Icons.Default.Warning, null, tint = Color(0xFFEF4444), modifier = Modifier.size(48.dp))
+                                Text((state as PropertyUiState.Error).message, color = Color(0xFFEF4444), fontSize = 14.sp)
+                                Button(
+                                    onClick = { viewModel.loadAll() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Blue600),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) { Text("Try again") }
+                            }
+                        }
+                    }
+                    is PropertyUiState.Success -> {
+                        // Results header
+                        SearchResultsHeader(
+                            count          = displayProperties.size,
+                            viewType       = viewType,
+                            sortOption     = sortOption,
+                            showSortMenu   = showSortMenu,
+                            onViewToggle   = { viewType = if (viewType == "grid") "list" else "grid" },
+                            onSortClick    = { showSortMenu = true },
+                            onSortSelected = { sortOption = it; showSortMenu = false },
+                            onDismissSort  = { showSortMenu = false }
+                        )
+
+                        if (!isSearching) {
+                            // Show recent searches when idle
+                            RecentSearchesSection(
+                                recentSearches = recentSearches,
+                                onSearchClick  = { searchQuery = it }
+                            )
+                        } else if (displayProperties.isEmpty()) {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Icon(Icons.Default.Search, null, tint = Gray300, modifier = Modifier.size(56.dp))
+                                    Text("No properties found", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Gray700)
+                                    Text("Try adjusting your search or filters", fontSize = 14.sp, color = Gray500)
+                                    TextButton(onClick = { searchQuery = ""; selectedCategory = "All" }) {
+                                        Text("Clear search", color = Blue600)
+                                    }
+                                }
+                            }
+                        } else {
+                            if (viewType == "grid") {
+                                SearchPropertyGrid(properties = displayProperties, navController)
+                            } else {
+                                SearchPropertyList(properties = displayProperties)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Filter sheet
+            if (showFilters) {
+                SearchFilterSheet(
+                    currentMinBeds  = filterMinBeds,
+                    currentMinPrice = filterMinPrice,
+                    currentMaxPrice = filterMaxPrice,
+                    onApply = { beds, minP, maxP ->
+                        filterMinBeds  = beds
+                        filterMinPrice = minP
+                        filterMaxPrice = maxP
+                        viewModel.search(minBeds = beds, minPrice = minP, maxPrice = maxP)
+                        showFilters = false
+                    },
+                    onReset = {
+                        filterMinBeds  = null
+                        filterMinPrice = null
+                        filterMaxPrice = null
+                        viewModel.loadAll()
+                        showFilters = false
+                    },
+                    onDismiss = { showFilters = false }
+                )
+            }
         }
     }
 }
 
+// ─── Top bar ──────────────────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchTopBar() {
     TopAppBar(
-        title = {
-            Text(
-                text = "Search Properties",
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF1F2937)
-            )
-        },
+        title = { Text("Search Properties", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Gray900) },
         actions = {
-            IconButton(onClick = { /* Handle saved searches */ }) {
-                Icon(
-                    imageVector = Icons.Outlined.Star,
-                    contentDescription = "Saved Searches",
-                    tint = Color(0xFF4B5563)
-                )
+            IconButton(onClick = { }) {
+                Icon(Icons.Outlined.Star, contentDescription = "Saved searches", tint = Gray700)
             }
         },
-        colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = Color.White
-        )
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
     )
 }
 
+// ─── Search bar ───────────────────────────────────────────────────────────────
 @Composable
 fun SearchBarSection(
     searchQuery: String,
-    onSearchQueryChange: (String) -> Unit,
+    onQueryChange: (String) -> Unit,
     onFilterClick: () -> Unit,
-    onViewTypeChange: () -> Unit
+    onViewTypeChange: () -> Unit,
+    viewType: String,
+    hasActiveFilters: Boolean
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.White)
-            .padding(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Search TextField
         OutlinedTextField(
-            value = searchQuery,
-            onValueChange = onSearchQueryChange,
-            placeholder = {
-                Text(
-                    text = "Search location, property...",
-                    fontSize = 14.sp,
-                    color = Color(0xFF9CA3AF)
-                )
-            },
-            leadingIcon = {
-                Icon(
-                    imageVector = Icons.Default.Search,
-                    contentDescription = "Search",
-                    tint = Color(0xFF6B7280)
-                )
-            },
-            trailingIcon = {
+            value           = searchQuery,
+            onValueChange   = onQueryChange,
+            placeholder     = { Text("City, street, property type…", fontSize = 14.sp, color = Gray500) },
+            leadingIcon     = { Icon(Icons.Default.Search, null, tint = Gray500) },
+            trailingIcon    = {
                 if (searchQuery.isNotEmpty()) {
-                    IconButton(onClick = { onSearchQueryChange("") }) {
-                        Icon(
-                            imageVector = Icons.Default.Clear,
-                            contentDescription = "Clear",
-                            tint = Color(0xFF9CA3AF)
-                        )
+                    IconButton(onClick = { onQueryChange("") }) {
+                        Icon(Icons.Default.Clear, null, tint = Gray500)
                     }
                 }
             },
-            modifier = Modifier
-                .weight(1f)
-                .height(56.dp),
-            shape = RoundedCornerShape(12.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                unfocusedBorderColor = Color(0xFFE5E7EB),
-                focusedBorderColor = Color(0xFF2563EB),
-                unfocusedContainerColor = Color(0xFFF9FAFB),
-                focusedContainerColor = Color.White
-            ),
-            singleLine = true
-        )
-
-        // Filter Button
-        IconButton(
-            onClick = onFilterClick,
-            modifier = Modifier
-                .size(56.dp)
-                .background(Color(0xFF2563EB), RoundedCornerShape(12.dp))
-        ) {
-            Icon(
-                imageVector = Icons.Default.Menu,
-                contentDescription = "Filters",
-                tint = Color.White
+            modifier        = Modifier.weight(1f).height(56.dp),
+            shape           = RoundedCornerShape(12.dp),
+            singleLine      = true,
+            colors          = OutlinedTextFieldDefaults.colors(
+                unfocusedBorderColor    = Color(0xFFE5E7EB),
+                focusedBorderColor      = Blue600,
+                unfocusedContainerColor = Gray100,
+                focusedContainerColor   = Color.White
             )
+        )
+        // Filter button with active-state indicator
+        BadgedBox(
+            badge = {
+                if (hasActiveFilters) Badge(containerColor = Color(0xFFEF4444)) {}
+            }
+        ) {
+            IconButton(
+                onClick  = onFilterClick,
+                modifier = Modifier.size(56.dp).background(Blue600, RoundedCornerShape(12.dp))
+            ) {
+                Icon(Icons.Default.Menu, contentDescription = "Filters", tint = Color.White)
+            }
         }
     }
 }
 
+// ─── Category chips ───────────────────────────────────────────────────────────
 @Composable
-fun CategoriesSection(
+fun CategoryChipsRow(
     categories: List<SearchCategory>,
     selectedCategory: String,
-    onCategorySelected: (String) -> Unit
+    onSelect: (String) -> Unit
 ) {
     LazyRow(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.White)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+        modifier = Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 16.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        items(categories) { category ->
-            CategoryChip(
-                category = category,
-                isSelected = selectedCategory == category.name,
-                onClick = { onCategorySelected(category.name) }
+        items(categories) { cat ->
+            val selected = selectedCategory == cat.name
+            FilterChip(
+                selected = selected,
+                onClick  = { onSelect(cat.name) },
+                label = {
+                    Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(cat.icon, null, modifier = Modifier.size(16.dp), tint = if (selected) Color.White else cat.color)
+                        Text(cat.name, fontSize = 13.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
+                    }
+                },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = cat.color,
+                    selectedLabelColor     = Color.White,
+                    containerColor         = Gray100,
+                    labelColor             = Gray700
+                )
             )
         }
     }
 }
 
+// ─── Results header ───────────────────────────────────────────────────────────
 @Composable
-fun CategoryChip(
-    category: SearchCategory,
-    isSelected: Boolean,
-    onClick: () -> Unit
+fun SearchResultsHeader(
+    count: Int,
+    viewType: String,
+    sortOption: SortOption,
+    showSortMenu: Boolean,
+    onViewToggle: () -> Unit,
+    onSortClick: () -> Unit,
+    onSortSelected: (SortOption) -> Unit,
+    onDismissSort: () -> Unit
 ) {
-    FilterChip(
-        selected = isSelected,
-        onClick = onClick,
-        label = {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = category.icon,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                    tint = if (isSelected) Color.White else category.color
-                )
-                Text(
-                    text = category.name,
-                    fontSize = 14.sp,
-                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
-                )
-            }
-        },
-        colors = FilterChipDefaults.filterChipColors(
-            selectedContainerColor = category.color,
-            selectedLabelColor = Color.White,
-            containerColor = Color(0xFFF9FAFB),
-            labelColor = Color(0xFF6B7280)
-        )
-    )
-}
-
-@Composable
-fun ResultsHeader(count: Int, viewType: String) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color(0xFFF8F9FA))
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+        modifier = Modifier.fillMaxWidth().background(BgPage).padding(horizontal = 16.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = "$count Properties Found",
-            fontSize = 16.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = Color(0xFF1F2937)
-        )
+        Text("$count results", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Gray900)
 
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text(
-                text = "Sort by",
-                fontSize = 14.sp,
-                color = Color(0xFF6B7280)
-            )
-            Text(
-                text = "Price",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                color = Color(0xFF2563EB),
-                modifier = Modifier.clickable { /* Handle sort */ }
-            )
-            Icon(
-                imageVector = Icons.Default.ArrowDropDown,
-                contentDescription = "Sort",
-                tint = Color(0xFF2563EB),
-                modifier = Modifier.size(20.dp)
-            )
-        }
-    }
-}
-
-@Composable
-fun RecentSearchesSection(recentSearches: List<String>) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Recent Searches",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF1F2937)
-            )
-            TextButton(onClick = { /* Clear all */ }) {
-                Text(
-                    text = "Clear All",
-                    fontSize = 14.sp,
-                    color = Color(0xFF2563EB)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            // Sort dropdown
+            Box {
+                TextButton(onClick = onSortClick, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
+                    Icon(Icons.Default.List, null, tint = Blue600, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(sortOption.label, fontSize = 12.sp, color = Blue600, fontWeight = FontWeight.Medium)
+                    Icon(Icons.Default.KeyboardArrowDown, null, tint = Blue600, modifier = Modifier.size(16.dp))
+                }
+                DropdownMenu(expanded = showSortMenu, onDismissRequest = onDismissSort) {
+                    SortOption.entries.forEach { opt ->
+                        DropdownMenuItem(
+                            text = {
+                                Text(opt.label, fontSize = 14.sp, color = if (sortOption == opt) Blue600 else Gray700,
+                                    fontWeight = if (sortOption == opt) FontWeight.SemiBold else FontWeight.Normal)
+                            },
+                            onClick = { onSortSelected(opt) },
+                            trailingIcon = {
+                                if (sortOption == opt) Icon(Icons.Default.Check, null, tint = Blue600, modifier = Modifier.size(16.dp))
+                            }
+                        )
+                    }
+                }
+            }
+            // View toggle
+            IconButton(onClick = onViewToggle, modifier = Modifier.size(36.dp)) {
+                Icon(
+                    imageVector = if (viewType == "grid") Icons.Default.List else Icons.Default.Menu,
+                    contentDescription = "Toggle view",
+                    tint = Blue600,
+                    modifier = Modifier.size(20.dp)
                 )
             }
         }
+    }
+}
 
-        Spacer(modifier = Modifier.height(12.dp))
-
-        recentSearches.forEach { search ->
-            RecentSearchItem(search = search)
-            Spacer(modifier = Modifier.height(8.dp))
+// ─── Recent searches ──────────────────────────────────────────────────────────
+@Composable
+fun RecentSearchesSection(recentSearches: List<String>, onSearchClick: (String) -> Unit) {
+    var searches by remember { mutableStateOf(recentSearches) }
+    Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("Recent Searches", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Gray900)
+            TextButton(onClick = { searches = emptyList() }) {
+                Text("Clear All", fontSize = 13.sp, color = Blue600)
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        if (searches.isEmpty()) {
+            Text("No recent searches.", color = Gray500, fontSize = 13.sp)
+        } else {
+            searches.forEach { search ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color.White)
+                        .clickable { onSearchClick(search) }
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Icon(Icons.Outlined.Search, null, tint = Gray500, modifier = Modifier.size(18.dp))
+                    Text(search, fontSize = 14.sp, color = Gray700, modifier = Modifier.weight(1f))
+                    Icon(Icons.Default.Search, contentDescription = "Use search", tint = Gray300, modifier = Modifier.size(16.dp))
+                }
+            }
         }
     }
 }
 
+// ─── Grid view ────────────────────────────────────────────────────────────────
 @Composable
-fun RecentSearchItem(search: String) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(Color.White)
-            .clickable { /* Handle search click */ }
-            .padding(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        //history
-        Icon(
-            imageVector = Icons.Default.CheckCircle,
-            contentDescription = null,
-            tint = Color(0xFF9CA3AF),
-            modifier = Modifier.size(20.dp)
-        )
-        Text(
-            text = search,
-            fontSize = 14.sp,
-            color = Color(0xFF4B5563),
-            modifier = Modifier.weight(1f)
-        )
-        Icon(
-            imageVector = Icons.Default.Search,
-            contentDescription = "Use search",
-            tint = Color(0xFF9CA3AF),
-            modifier = Modifier.size(16.dp)
-        )
-    }
-}
-
-@Composable
-fun PropertyGridResults(properties: List<PropertySearchResult>) {
+fun SearchPropertyGrid(properties: List<SimplyRetsProperty> , navController: NavController) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        items(properties) { property ->
-            PropertyGridCard(property = property)
-        }
+        items(properties) { SearchPropertyGridCard(it , navController) }
     }
 }
 
 @Composable
-fun PropertyGridCard(property: PropertySearchResult) {
-    var isFavorite by remember { mutableStateOf(property.isFavorite) }
+fun SearchPropertyGridCard(property: SimplyRetsProperty,navController: NavController) {
+    var isFavorite by remember { mutableStateOf(false) }
+    val photoUrl  = property.photos?.firstOrNull()
+    val price     = property.listPrice?.let {  } ?: "TBD"
+    val title     = property.address?.streetName ?: "Property"
+    val location  = listOfNotNull(property.address?.city, property.address?.state).joinToString(", ")
+    val fallback  = searchFallbackColor(property.mlsId)
 
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { /* Handle property click */ },
+        modifier = Modifier.fillMaxWidth().clickable {
+            property.mlsId?.let { navController.navigate(Screens.PropertyDetailScreenRoute(mlsId = it)) }
+        },
         colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         shape = RoundedCornerShape(16.dp)
     ) {
         Column {
-            // Property Image
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(140.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(property.imageColor),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Home,
-                        contentDescription = null,
-                        tint = Color.White.copy(alpha = 0.5f),
-                        modifier = Modifier.size(50.dp)
-                    )
+            Box(modifier = Modifier.fillMaxWidth().height(140.dp)) {
+                if (photoUrl != null) {
+                    AsyncImage(model = photoUrl, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                } else {
+                    Box(modifier = Modifier.fillMaxSize().background(fallback), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Default.Home, null, tint = Color.White.copy(alpha = 0.5f), modifier = Modifier.size(48.dp))
+                    }
                 }
-
-                // Favorite Button
+                // Favourite
                 IconButton(
                     onClick = { isFavorite = !isFavorite },
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(8.dp)
-                        .size(32.dp)
-                        .background(Color.White.copy(alpha = 0.9f), CircleShape)
+                    modifier = Modifier.align(Alignment.TopEnd).padding(6.dp).size(30.dp).background(Color.White.copy(alpha = 0.9f), CircleShape)
                 ) {
                     Icon(
-                        imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                        contentDescription = "Favorite",
-                        tint = if (isFavorite) Color(0xFFEF4444) else Color(0xFF6B7280),
-                        modifier = Modifier.size(18.dp)
+                        if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                        null, tint = if (isFavorite) Color(0xFFEF4444) else Gray500,
+                        modifier = Modifier.size(16.dp)
                     )
                 }
-
-                // Type Badge
-                Surface(
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(8.dp),
-                    color = Color(0xFF2563EB),
-                    shape = RoundedCornerShape(6.dp)
-                ) {
-                    Text(
-                        text = property.type,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color.White,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
+                // Type badge
+                property.property?.type?.let {
+                    Surface(modifier = Modifier.align(Alignment.BottomStart).padding(6.dp), color = Blue600.copy(alpha = 0.9f), shape = RoundedCornerShape(5.dp)) {
+                        Text(it, fontSize = 9.sp, fontWeight = FontWeight.SemiBold, color = Color.White, modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp))
+                    }
+                }
+                // MLS status
+                property.mls?.status?.let {
+                    Surface(modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp), color = Color(0xFF059669).copy(alpha = 0.9f), shape = RoundedCornerShape(5.dp)) {
+                        Text(it, fontSize = 8.sp, fontWeight = FontWeight.SemiBold, color = Color.White, modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp))
+                    }
                 }
             }
-
-            // Property Details
-            Column(
-                modifier = Modifier.padding(12.dp)
-            ) {
-                Text(
-                    text = property.price,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF2563EB)
-                )
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                Text(
-                    text = property.title,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFF1F2937),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.LocationOn,
-                        contentDescription = null,
-                        tint = Color(0xFF9CA3AF),
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Text(
-                        text = property.location,
-                        fontSize = 12.sp,
-                        color = Color(0xFF6B7280),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    if (property.bedrooms > 0) {
-                        PropertyFeature(
-                            icon = Icons.Default.Home,
-                            value = "${property.bedrooms}"
-                        )
+            Column(modifier = Modifier.padding(10.dp)) {
+                Text(price.toString(), fontSize = 16.sp, fontWeight = FontWeight.ExtraBold, color = Blue600)
+                Spacer(Modifier.height(2.dp))
+                Text(title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Gray900, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (location.isNotEmpty()) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Icon(Icons.Default.LocationOn, null, tint = Gray500, modifier = Modifier.size(11.dp))
+                        Text(location, fontSize = 11.sp, color = Gray500, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
-                    PropertyFeature(
-                        icon = Icons.Default.Home,
-                        value = "${property.bathrooms}"
-                    )
+                }
+                property.property?.let { prop ->
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        prop.bedrooms?.let { if (it > 0) Text("$it bd", fontSize = 11.sp, color = Gray500) }
+                        prop.bathsFull?.let { Text("$it ba", fontSize = 11.sp, color = Gray500) }
+                        prop.area?.let { Text("${it} ft²", fontSize = 11.sp, color = Gray500) }
+                    }
                 }
             }
         }
     }
 }
 
+// ─── List view ────────────────────────────────────────────────────────────────
 @Composable
-fun PropertyListResults(properties: List<PropertySearchResult>) {
+fun SearchPropertyList(properties: List<SimplyRetsProperty>) {
     LazyColumn(
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        items(properties) { property ->
-            PropertyListCard(property = property)
-        }
+        items(properties) { SearchPropertyListCard(it) }
     }
 }
 
 @Composable
-fun PropertyListCard(property: PropertySearchResult) {
-    var isFavorite by remember { mutableStateOf(property.isFavorite) }
+fun SearchPropertyListCard(property: SimplyRetsProperty) {
+    var isFavorite by remember { mutableStateOf(false) }
+    val photoUrl = property.photos?.firstOrNull()
+    val price    = property.listPrice?.let {  } ?: "TBD"
+    val title    = property.address?.streetName ?: "Property"
+    val location = listOfNotNull(property.address?.city, property.address?.state).joinToString(", ")
+    val fallback = searchFallbackColor(property.mlsId)
 
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { /* Handle property click */ },
+        modifier = Modifier.fillMaxWidth().clickable { },
         colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         shape = RoundedCornerShape(16.dp)
     ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            // Property Image
-            Box(
-                modifier = Modifier
-                    .size(100.dp)
-                    .clip(RoundedCornerShape(12.dp))
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(property.imageColor),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Home,
-                        contentDescription = null,
-                        tint = Color.White.copy(alpha = 0.5f),
-                        modifier = Modifier.size(40.dp)
-                    )
+        Row(modifier = Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            // Thumbnail
+            Box(modifier = Modifier.size(100.dp).clip(RoundedCornerShape(12.dp))) {
+                if (photoUrl != null) {
+                    AsyncImage(model = photoUrl, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                } else {
+                    Box(modifier = Modifier.fillMaxSize().background(fallback), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Default.Home, null, tint = Color.White.copy(alpha = 0.5f), modifier = Modifier.size(36.dp))
+                    }
                 }
-
-                Surface(
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(6.dp),
-                    color = Color(0xFF2563EB),
-                    shape = RoundedCornerShape(6.dp)
-                ) {
-                    Text(
-                        text = property.type,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color.White,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
-                    )
+                property.property?.type?.let {
+                    Surface(modifier = Modifier.align(Alignment.TopStart).padding(5.dp), color = Blue600.copy(alpha = 0.9f), shape = RoundedCornerShape(4.dp)) {
+                        Text(it, fontSize = 8.sp, fontWeight = FontWeight.SemiBold, color = Color.White, modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp))
+                    }
                 }
             }
 
-            // Property Details
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Top
-                ) {
-                    Text(
-                        text = property.price,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF2563EB)
-                    )
-
-                    IconButton(
-                        onClick = { isFavorite = !isFavorite },
-                        modifier = Modifier.size(32.dp)
-                    ) {
+            // Details
+            Column(modifier = Modifier.weight(1f)) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
+                    Text(price.toString(), fontSize = 17.sp, fontWeight = FontWeight.ExtraBold, color = Blue600)
+                    IconButton(onClick = { isFavorite = !isFavorite }, modifier = Modifier.size(28.dp)) {
                         Icon(
-                            imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                            contentDescription = "Favorite",
-                            tint = if (isFavorite) Color(0xFFEF4444) else Color(0xFF6B7280),
-                            modifier = Modifier.size(20.dp)
+                            if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                            null, tint = if (isFavorite) Color(0xFFEF4444) else Gray500,
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }
-
-                Text(
-                    text = property.title,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFF1F2937),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.LocationOn,
-                        contentDescription = null,
-                        tint = Color(0xFF9CA3AF),
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Text(
-                        text = property.location,
-                        fontSize = 13.sp,
-                        color = Color(0xFF6B7280),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    if (property.bedrooms > 0) {
-                        PropertyFeature(
-                            icon = Icons.Default.Home,
-                            value = "${property.bedrooms} Beds"
-                        )
+                Text(title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Gray900, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (location.isNotEmpty()) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Icon(Icons.Default.LocationOn, null, tint = Gray500, modifier = Modifier.size(12.dp))
+                        Text(location, fontSize = 12.sp, color = Gray500)
                     }
-                    PropertyFeature(
-                        icon = Icons.Default.Home,
-                        value = "${property.bathrooms} Baths"
-                    )
-                    PropertyFeature(
-                        icon = Icons.Default.Home,
-                        value = property.area
-                    )
+                }
+                property.mls?.status?.let {
+                    Spacer(Modifier.height(2.dp))
+                    Surface(color = Color(0xFFD1FAE5), shape = RoundedCornerShape(4.dp)) {
+                        Text(it, fontSize = 10.sp, color = Color(0xFF059669), fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                property.property?.let { prop ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        prop.bedrooms?.let { if (it > 0) SearchFeature(Icons.Default.Home, "$it Beds") }
+                        prop.bathsFull?.let { SearchFeature(Icons.Default.Home, "$it Baths") }
+                        prop.area?.let { SearchFeature(Icons.Default.Home, "$it ft²") }
+                    }
                 }
             }
         }
@@ -699,161 +590,140 @@ fun PropertyListCard(property: PropertySearchResult) {
 }
 
 @Composable
-fun PropertyFeature(
-    icon: ImageVector,
-    value: String
-) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = Color(0xFF6B7280),
-            modifier = Modifier.size(16.dp)
-        )
-        Text(
-            text = value,
-            fontSize = 12.sp,
-            color = Color(0xFF6B7280)
-        )
+fun SearchFeature(icon: ImageVector, value: String) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+        Icon(icon, null, tint = Gray500, modifier = Modifier.size(13.dp))
+        Text(value, fontSize = 11.sp, color = Gray500)
     }
 }
 
+// ─── Filter sheet ─────────────────────────────────────────────────────────────
 @Composable
-fun FilterBottomSheet(onDismiss: () -> Unit) {
-    var priceRange by remember { mutableStateOf(0f..1000000f) }
-    var selectedBedrooms by remember { mutableStateOf("Any") }
-    var selectedBathrooms by remember { mutableStateOf("Any") }
+fun SearchFilterSheet(
+    currentMinBeds: Int?,
+    currentMinPrice: Int?,
+    currentMaxPrice: Int?,
+    onApply: (Int?, Int?, Int?) -> Unit,
+    onReset: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    var selectedBedrooms by remember { mutableStateOf(currentMinBeds?.toString() ?: "Any") }
+    var minPriceText     by remember { mutableStateOf(currentMinPrice?.toString() ?: "") }
+    var maxPriceText     by remember { mutableStateOf(currentMaxPrice?.toString() ?: "") }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.5f))
+            .background(Color.Black.copy(alpha = 0.45f))
             .clickable { onDismiss() },
         contentAlignment = Alignment.BottomCenter
     ) {
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.7f)
+                .fillMaxHeight(0.72f)
                 .clickable(enabled = false) { },
             colors = CardDefaults.cardColors(containerColor = Color.White),
             shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(24.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Filters",
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF1F2937)
+            Column(modifier = Modifier.fillMaxSize().padding(24.dp)) {
+                // Handle
+                Box(modifier = Modifier.align(Alignment.CenterHorizontally).width(40.dp).height(4.dp).clip(RoundedCornerShape(2.dp)).background(Gray300))
+                Spacer(Modifier.height(16.dp))
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text("Filters", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Gray900)
+                    IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, null, tint = Gray700) }
+                }
+
+                Spacer(Modifier.height(20.dp))
+
+                // Price range
+                Text("Price Range", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Gray900)
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = minPriceText,
+                        onValueChange = { minPriceText = it.filter { c -> c.isDigit() } },
+                        label = { Text("Min \$") },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Blue600)
                     )
+                    OutlinedTextField(
+                        value = maxPriceText,
+                        onValueChange = { maxPriceText = it.filter { c -> c.isDigit() } },
+                        label = { Text("Max \$") },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Blue600)
+                    )
+                }
 
-                    IconButton(onClick = onDismiss) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Close"
-                        )
+                Spacer(Modifier.height(20.dp))
+
+                // Quick price presets
+                Text("Quick Select", fontSize = 13.sp, color = Gray500, fontWeight = FontWeight.Medium)
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("Under 500K" to (null to 500000), "500K–1M" to (500000 to 1000000), "1M+" to (1000000 to null)).forEach { (label, range) ->
+                        val (mn, mx) = range
+                        val active = minPriceText == (mn?.toString() ?: "") && maxPriceText == (mx?.toString() ?: "")
+                        Surface(
+                            onClick = { minPriceText = mn?.toString() ?: ""; maxPriceText = mx?.toString() ?: "" },
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (active) Blue600 else Gray100
+                        ) {
+                            Text(label, fontSize = 12.sp, color = if (active) Color.White else Gray700, fontWeight = FontWeight.Medium, modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp))
+                        }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(Modifier.height(20.dp))
 
-                Text(
-                    text = "Price Range",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFF1F2937)
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Text(
-                    text = "$${priceRange.start.toInt()} - $${priceRange.endInclusive.toInt()}",
-                    fontSize = 14.sp,
-                    color = Color(0xFF2563EB),
-                    fontWeight = FontWeight.Medium
-                )
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                Text(
-                    text = "Bedrooms",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFF1F2937)
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+                // Bedrooms
+                Text("Minimum Bedrooms", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Gray900)
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf("Any", "1", "2", "3", "4", "5+").forEach { bed ->
-                        FilterOptionChip(
-                            text = bed,
-                            isSelected = selectedBedrooms == bed,
-                            onClick = { selectedBedrooms = bed }
-                        )
+                        val sel = selectedBedrooms == bed
+                        Surface(
+                            onClick = { selectedBedrooms = bed },
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (sel) Blue600 else Gray100,
+                            border = if (sel) null else androidx.compose.foundation.BorderStroke(1.dp, Gray300)
+                        ) {
+                            Text(bed, fontSize = 14.sp, color = if (sel) Color.White else Gray700,
+                                fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp))
+                        }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(Modifier.weight(1f))
 
-                Text(
-                    text = "Bathrooms",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFF1F2937)
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    listOf("Any", "1", "2", "3", "4+").forEach { bath ->
-                        FilterOptionChip(
-                            text = bath,
-                            isSelected = selectedBathrooms == bath,
-                            onClick = { selectedBathrooms = bath }
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.weight(1f))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
+                // Action buttons
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedButton(
-                        onClick = { /* Reset filters */ },
-                        modifier = Modifier.weight(1f).height(50.dp),
-                        shape = RoundedCornerShape(12.dp)
+                        onClick = { onReset() },
+                        modifier = Modifier.weight(1f).height(52.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Gray300)
                     ) {
-                        Text("Reset")
+                        Text("Reset", color = Gray700, fontWeight = FontWeight.SemiBold)
                     }
-
                     Button(
-                        onClick = onDismiss,
-                        modifier = Modifier.weight(1f).height(50.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF2563EB)
-                        ),
-                        shape = RoundedCornerShape(12.dp)
+                        onClick = {
+                            val beds = if (selectedBedrooms == "Any") null else selectedBedrooms.replace("+", "").toIntOrNull()
+                            onApply(beds, minPriceText.toIntOrNull(), maxPriceText.toIntOrNull())
+                        },
+                        modifier = Modifier.weight(1f).height(52.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Blue600),
+                        shape = RoundedCornerShape(14.dp)
                     ) {
-                        Text("Apply Filters")
+                        Text("Apply", fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
@@ -861,127 +731,7 @@ fun FilterBottomSheet(onDismiss: () -> Unit) {
     }
 }
 
-@Composable
-fun FilterOptionChip(
-    text: String,
-    isSelected: Boolean,
-    onClick: () -> Unit
-) {
-    FilterChip(
-        selected = isSelected,
-        onClick = onClick,
-        label = {
-            Text(
-                text = text,
-                fontSize = 14.sp
-            )
-        },
-        colors = FilterChipDefaults.filterChipColors(
-            selectedContainerColor = Color(0xFF2563EB),
-            selectedLabelColor = Color.White,
-            containerColor = Color(0xFFF3F4F6),
-            labelColor = Color(0xFF6B7280)
-        ),
-        border = FilterChipDefaults.filterChipBorder(
-            enabled = true,
-            selected = isSelected,
-            borderColor = if (isSelected) Color(0xFF2563EB) else Color(0xFFE5E7EB),
-            borderWidth = 1.dp
-        )
-    )
-}
-
-@Composable
-fun BottomNavigationBar(
-    selectedIndex: Int,
-    onItemSelected: (Int) -> Unit
-) {
-    NavigationBar(
-        containerColor = Color.White,
-        tonalElevation = 8.dp
-    ) {
-        NavigationBarItem(
-            selected = selectedIndex == 0,
-            onClick = { onItemSelected(0) },
-            icon = {
-                Icon(
-                    imageVector = if (selectedIndex == 0) Icons.Filled.Home else Icons.Outlined.Home,
-                    contentDescription = "Home"
-                )
-            },
-            label = { Text(text = "Home", fontSize = 11.sp) },
-            colors = NavigationBarItemDefaults.colors(
-                selectedIconColor = Color(0xFF2563EB),
-                selectedTextColor = Color(0xFF2563EB),
-                unselectedIconColor = Color(0xFF9CA3AF),
-                unselectedTextColor = Color(0xFF9CA3AF),
-                indicatorColor = Color(0xFFEFF6FF)
-            )
-        )
-
-        NavigationBarItem(
-            selected = selectedIndex == 1,
-            onClick = { onItemSelected(1) },
-            icon = {
-                Icon(
-                    imageVector = if (selectedIndex == 1) Icons.Filled.Search else Icons.Outlined.Search,
-                    contentDescription = "Search"
-                )
-            },
-            label = { Text(text = "Search", fontSize = 11.sp) },
-            colors = NavigationBarItemDefaults.colors(
-                selectedIconColor = Color(0xFF2563EB),
-                selectedTextColor = Color(0xFF2563EB),
-                unselectedIconColor = Color(0xFF9CA3AF),
-                unselectedTextColor = Color(0xFF9CA3AF),
-                indicatorColor = Color(0xFFEFF6FF)
-            )
-        )
-
-        NavigationBarItem(
-            selected = selectedIndex == 2,
-            onClick = { onItemSelected(2) },
-            icon = {
-                Icon(
-                    imageVector = if (selectedIndex == 2) Icons.Filled.Person else Icons.Outlined.Person,
-                    contentDescription = "Community"
-                )
-            },
-            label = { Text(text = "Community", fontSize = 11.sp) },
-            colors = NavigationBarItemDefaults.colors(
-                selectedIconColor = Color(0xFF2563EB),
-                selectedTextColor = Color(0xFF2563EB),
-                unselectedIconColor = Color(0xFF9CA3AF),
-                unselectedTextColor = Color(0xFF9CA3AF),
-                indicatorColor = Color(0xFFEFF6FF)
-            )
-        )
-
-        NavigationBarItem(
-            selected = selectedIndex == 3,
-            onClick = { onItemSelected(3) },
-            icon = {
-                Icon(
-                    imageVector = if (selectedIndex == 3) Icons.Filled.Person else Icons.Outlined.Person,
-                    contentDescription = "Profile"
-                )
-            },
-            label = { Text(text = "Profile", fontSize = 11.sp) },
-            colors = NavigationBarItemDefaults.colors(
-                selectedIconColor = Color(0xFF2563EB),
-                selectedTextColor = Color(0xFF2563EB),
-                unselectedIconColor = Color(0xFF9CA3AF),
-                unselectedTextColor = Color(0xFF9CA3AF),
-                indicatorColor = Color(0xFFEFF6FF)
-            )
-        )
-    }
-}
-
-@Preview(showBackground = true, showSystemUi = true)
-@Composable
-fun SearchScreenPreview() {
-    MaterialTheme {
-        SearchScreen()
-    }
+private fun searchFallbackColor(mlsId: Int?): Color {
+    val colors = listOf(Color(0xFFBFDBFE), Color(0xFFDDD6FE), Color(0xFFFED7AA), Color(0xFFD1FAE5), Color(0xFFFFE4E6))
+    return colors[(mlsId ?: 0) % colors.size]
 }

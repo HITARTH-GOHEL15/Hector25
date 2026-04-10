@@ -28,5 +28,5 @@ sealed class Screens(val route: String) {
     object SignUpScreenRoute
 
     @Serializable
-    object PropertyDetailScreenRoute
+    data class PropertyDetailScreenRoute(val mlsId: Int)
 }
